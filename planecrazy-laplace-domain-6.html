@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laplace Domain (Roots) — Aircraft Stability</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg: #f0f0f0; --surface: #d4d0c8; --border: #a0a098; --text: #1a1a18; --text-muted: #555550; --text-faint: #888880; }
+  body { font-family: 'Segoe UI', Tahoma, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  header { background: #c0bdb5; border-bottom: 2px solid #888; padding: 8px 16px; }
+  header h1 { font-size: 14px; font-weight: 600; }
+
+  .layout { display: grid; grid-template-columns: 200px 1fr 300px; height: calc(100vh - 42px); }
+
+  /* LEFT */
+  .controls { background: #c8c4bc; border-right: 2px solid #888; padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .ctrl-section { background: #d4d0c8; border: 2px inset #888; padding: 10px; }
+  .ctrl-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  input[type=range] { width: 100%; height: 4px; appearance: none; background: #888; border-radius: 2px; outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #336699; border: 2px solid #fff; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #336699; border: 2px solid #fff; cursor: pointer; }
+  .gain-val { font-size: 26px; font-weight: 700; color: #003366; font-variant-numeric: tabular-nums; text-align: center; margin: 4px 0; }
+  .slide-hint { font-size: 10px; color: var(--text-faint); text-align: center; font-style: italic; margin-top: 4px; }
+  .roots-list { display: flex; flex-direction: column; gap: 5px; }
+  .root-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-left: 3px solid transparent; background: #b8b4ac; }
+  .root-row.stable { border-color: #006600; }
+  .root-row.unstable { border-color: #cc0000; }
+  .root-cross { color: #cc0000; font-weight: 700; font-size: 13px; }
+  .root-val { font-size: 11px; font-family: monospace; }
+  .stab-badge { text-align: center; padding: 7px; border-radius: 3px; font-size: 11px; font-weight: 700; }
+  .stab-badge.stable { background: #d0f0d0; color: #005500; border: 1px solid #aaddaa; }
+  .stab-badge.unstable { background: #f0d0d0; color: #880000; border: 1px solid #ddaaaa; }
+
+  /* CENTRE — s-plane */
+  .splane-area { display: flex; flex-direction: column; padding: 12px; gap: 6px; background: var(--bg); align-items: center; justify-content: flex-start; }
+  .splane-title { font-size: 16px; font-weight: 700; text-align: center; }
+  .splane-box { width: 100%; max-width: 620px; height: min(58vh, 560px); background: #888; border: 2px inset #666; position: relative; overflow: hidden; }
+  canvas#splane { display: block; width: 100%; height: 100%; }
+
+  /* RIGHT */
+  .right-area { background: #c8c4bc; border-left: 2px solid #888; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow-y: auto; }
+
+  /* Plane front-view */
+  .plane-box { background: #f8f8f8; border: 2px inset #888; height: 180px; flex-shrink: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 20px; }
+  .plane-svg-wrap { display: flex; align-items: center; justify-content: center; flex: 1; height: 100%; }
+
+  /* Vertical setpoint control next to aircraft (-1..1, user-draggable) */
+  .vslide-wrap { display: flex; flex-direction: column; align-items: center; height: 82%; gap: 6px; }
+  .vslide-cap { font-size: 9px; color: var(--text-faint); }
+  .vslide-track-wrap { position: relative; flex: 1; width: 34px; }
+  .vslide-input { position: absolute; top: 50%; left: 50%; width: 120px; height: 18px; margin: 0; transform: translate(-50%,-50%) rotate(-90deg); }
+  .vslide-badge { background: #ffff99; border: 1px solid #999; font-size: 10px; font-family: monospace; padding: 1px 5px; border-radius: 2px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .splane-area { min-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header><h1>Laplace Domain (Roots) · Aircraft Stability</h1></header>
+<div class="layout">
+
+  <!-- LEFT -->
+  <div class="controls">
+    <div class="ctrl-section">
+      <div class="ctrl-title">Gain K</div>
+      <div class="gain-val" id="gain-val">1.0</div>
+      <input type="range" id="gain-log" min="0" max="1" step="0.0005" value="0.5">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-faint);margin-top:3px"><span>0.1</span><span>1</span><span>200</span></div>
+      <input type="number" id="gain-num" min="0.1" max="200" step="0.01" value="1" style="width:100%;margin-top:6px;font-size:12px;padding:3px 4px;border:2px inset #888;background:#fff;text-align:center">
+      <div class="slide-hint">Slide, or type a value</div>
+    </div>
+    <div class="ctrl-section">
+      <div class="ctrl-title">Stability</div>
+      <div class="stab-badge" id="stab-badge">—</div>
+    </div>
+    <div class="ctrl-section">
+      <div class="ctrl-title">Roots (poles)</div>
+      <div class="roots-list" id="roots-list"></div>
+    </div>
+  </div>
+
+  <!-- CENTRE: s-plane -->
+  <div class="splane-area">
+    <div class="splane-title">Laplace Domain (roots)</div>
+    <div class="splane-box" id="splane-box"><canvas id="splane"></canvas></div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-area">
+
+    <!-- Front-facing plane silhouette -->
+    <div class="ctrl-title">Aircraft</div>
+    <div class="plane-box" id="plane-box">
+      <div class="plane-svg-wrap">
+        <svg id="plane-svg" viewBox="0 0 240 120" xmlns="http://www.w3.org/2000/svg" style="width:210px;height:105px">
+          <!-- Vertical tail fin -->
+          <path d="M33,56 L47,59 L37,34 L26,41 Z" fill="#111"/>
+          <!-- Horizontal tailplanes -->
+          <path d="M58,60 L76,60 L52,36 L38,39 Z" fill="#111"/>
+          <path d="M58,60 L76,60 L52,84 L38,81 Z" fill="#111"/>
+          <!-- Main wings (swept back) -->
+          <path d="M126,54 L160,54 L110,6 L90,10 Z" fill="#111"/>
+          <path d="M126,66 L160,66 L110,114 L90,110 Z" fill="#111"/>
+          <!-- Engine pods -->
+          <ellipse cx="113" cy="26" rx="11" ry="4.5" fill="#111"/>
+          <ellipse cx="113" cy="94" rx="11" ry="4.5" fill="#111"/>
+          <!-- Fuselage -->
+          <path d="M20,60 C20,52 64,48 128,48 C184,48 210,53 226,60 C210,67 184,72 128,72 C64,72 20,68 20,60 Z" fill="#111"/>
+          <!-- Cockpit glass -->
+          <ellipse cx="198" cy="59" rx="9" ry="4.5" fill="#2a4a6a" opacity="0.75"/>
+        </svg>
+      </div>
+      <div class="vslide-wrap">
+        <span class="vslide-cap">1</span>
+        <div class="vslide-track-wrap">
+          <input type="range" id="setpoint" class="vslide-input" min="-1" max="1" step="0.01" value="0">
+        </div>
+        <span class="vslide-cap">-1</span>
+        <div class="vslide-badge" id="vslide-badge">0.00</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const A3 = 0.1, A2 = 4.2, A1 = 38.4;
+  const WN2 = 64, K1 = 2; // s0 coefficient = wn^2*(1 + k1*K), K = Gain K control
+  function a0OfGain(K){ return WN2 * (1 + K1 * K); }
+
+  // Distinct colour per root (index-based) so the same pole can be tracked
+  // between the Roots list and the s-plane plot.
+  const ROOT_COLORS = ['#d32f2f','#2e8b3d','#2255c0'];
+  function hexToRgba(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+
+  function complexSub(a,b){return{re:a.re-b.re,im:a.im-b.im};}
+  function complexMul(a,b){return{re:a.re*b.re-a.im*b.im,im:a.re*b.im+a.im*b.re};}
+  function complexDiv(a,b){const d=b.re*b.re+b.im*b.im;if(d<1e-20)return{re:1e9,im:1e9};return{re:(a.re*b.re+a.im*b.im)/d,im:(a.im*b.re-a.re*b.im)/d};}
+  function complexAdd(a,b){return{re:a.re+b.re,im:a.im+b.im};}
+
+  function evalPoly(c,z){let r={re:c[0],im:0};for(let i=1;i<c.length;i++)r=complexAdd(complexMul(r,z),{re:c[i],im:0});return r;}
+
+  function findRoots(coeffs){
+    const n=coeffs.length-1;
+    if(n<=0)return[];
+    const p=coeffs.map(c=>c/coeffs[0]);
+    if(n===1)return[{re:-p[1],im:0}];
+    if(n===2){const disc=p[1]*p[1]-4*p[2];if(disc>=0)return[{re:(-p[1]+Math.sqrt(disc))/2,im:0},{re:(-p[1]-Math.sqrt(disc))/2,im:0}];const re=-p[1]/2,im=Math.sqrt(-disc)/2;return[{re,im},{re,im:-im}];}
+    let roots=[];
+    for(let i=0;i<n;i++){const a=2*Math.PI*i/n+0.1;roots.push({re:Math.cos(a)*2,im:Math.sin(a)*2});}
+    for(let iter=0;iter<500;iter++){
+      for(let i=0;i<n;i++){
+        let denom={re:1,im:0};
+        for(let j=0;j<n;j++)if(i!==j)denom=complexMul(denom,complexSub(roots[i],roots[j]));
+        const corr=complexDiv(evalPoly(p,roots[i]),denom);
+        roots[i]=complexSub(roots[i],corr);
+      }
+    }
+    return roots.map(r=>({re:Math.abs(r.re)<1e-5?0:r.re,im:Math.abs(r.im)<1e-5?0:r.im}));
+  }
+
+  // Canvas setup
+  const sc=document.getElementById('splane'),sctx=sc.getContext('2d'),sb=document.getElementById('splane-box');
+
+  function resizeCanvases(){
+    sc.width=sb.clientWidth; sc.height=sb.clientHeight;
+  }
+  resizeCanvases();
+  window.addEventListener('resize',()=>{resizeCanvases();drawSplane(currentRoots);});
+
+  let currentRoots=[], currentGain=1, startTime=null;
+  let posX=0, posV=0, lastTs=null; // position-tracking simulation state
+
+  // Precompute root locus AFTER findRoots is defined
+  function getRootLocus(){
+    const branches=[[],[],[]];
+    const N=400;
+    for(let i=0;i<=N;i++){
+      const t=i/N;
+      // Cubic spacing packs far more points into low K (where the
+      // breakaway and the complex branches actually curve) while still
+      // reaching K=200; linear spacing left that region under-sampled,
+      // which is what made the curve look jagged/kited.
+      const K=0.01+199.99*Math.pow(t,3);
+      const r=findRoots([A3,A2,A1,a0OfGain(K)]);
+      // Sort by real part then imaginary part — stays continuous through
+      // the breakaway point (real->complex transition), unlike sorting
+      // by imaginary part alone which swaps branch identity there.
+      r.sort((a,b)=>(a.re-b.re)||(a.im-b.im));
+      r.forEach((root,j)=>{if(branches[j])branches[j].push({re:root.re,im:root.im,K});});
+    }
+    return branches;
+  }
+
+  let rootLocus=null; // computed lazily after first update
+
+  function drawSplane(roots){
+    const W=sc.width,H=sc.height;
+    if(W===0||H===0)return;
+    const xMin=-50,xMax=1,yMin=-20,yMax=20;
+    const ML=46,MR=8,MT=8,MB=28;
+    const pw=W-ML-MR,ph=H-MT-MB;
+
+    function toC(re,im){return{x:ML+(re-xMin)/(xMax-xMin)*pw,y:MT+(1-(im-yMin)/(yMax-yMin))*ph};}
+
+    sctx.fillStyle='#dcdcdc'; sctx.fillRect(0,0,W,H);
+    sctx.fillStyle='#fff'; sctx.fillRect(ML,MT,pw,ph);
+
+    // Grid
+    sctx.strokeStyle='rgba(0,0,0,0.12)'; sctx.lineWidth=1;
+    [-40,-30,-20,-10,0].forEach(v=>{const{x}=toC(v,0);sctx.beginPath();sctx.moveTo(x,MT);sctx.lineTo(x,MT+ph);sctx.stroke();});
+    [-15,-10,-5,0,5,10,15].forEach(v=>{const{y}=toC(0,v);sctx.beginPath();sctx.moveTo(ML,y);sctx.lineTo(ML+pw,y);sctx.stroke();});
+
+    // Real and imaginary axes — solid black so it's unambiguous which side
+    // (LHP/RHP) a pole sits on.
+    const org=toC(0,0);
+    sctx.strokeStyle='#000'; sctx.lineWidth=1.5;
+    sctx.beginPath();sctx.moveTo(org.x,MT);sctx.lineTo(org.x,MT+ph);sctx.stroke();
+    sctx.beginPath();sctx.moveTo(ML,org.y);sctx.lineTo(ML+pw,org.y);sctx.stroke();
+
+    // Root locus traces
+    if(rootLocus){
+      rootLocus.forEach(branch=>{
+        if(branch.length<2)return;
+        sctx.setLineDash([3,3]); sctx.lineWidth=1; sctx.strokeStyle='rgba(0,0,180,0.3)';
+        sctx.beginPath();
+        branch.forEach((r,i)=>{
+          const{x,y}=toC(r.re,r.im);
+          i===0?sctx.moveTo(x,y):sctx.lineTo(x,y);
+        });
+        sctx.stroke();
+        sctx.setLineDash([]);
+      });
+    }
+
+    // Axis labels
+    sctx.fillStyle='#333'; sctx.font='10px system-ui'; sctx.textAlign='center';
+    [-50,-40,-30,-20,-10,0,1].forEach(v=>{const{x}=toC(v,0);if(x>=ML&&x<=ML+pw)sctx.fillText(v,x,MT+ph+16);});
+    sctx.textAlign='right';
+    [-20,-15,-10,-5,0,5,10,15,20].forEach(v=>{const{y}=toC(0,v);sctx.fillText(v,ML-4,y+3);});
+    sctx.fillStyle='#555'; sctx.textAlign='center';
+    sctx.fillText('Real',ML+pw/2,MT+ph+26);
+    sctx.save();sctx.translate(13,MT+ph/2);sctx.rotate(-Math.PI/2);sctx.fillText('Imaginary',0,0);sctx.restore();
+
+    // × markers — one colour per root index (tracked to the Roots list),
+    // clamped to the plot edge (with an arrow showing which way it's
+    // off-scale) instead of vanishing once a root's real part exceeds range.
+    roots.forEach((r,i)=>{
+      const color=ROOT_COLORS[i%ROOT_COLORS.length];
+      const raw=toC(r.re,r.im);
+      let x=Math.max(ML+6,Math.min(ML+pw-6,raw.x));
+      let y=Math.max(MT+6,Math.min(MT+ph-6,raw.y));
+      const clipped=(x!==raw.x)||(y!==raw.y);
+
+      const grd=sctx.createRadialGradient(x,y,0,x,y,12);
+      grd.addColorStop(0,hexToRgba(color,clipped?0.15:0.25));grd.addColorStop(1,'transparent');
+      sctx.fillStyle=grd;sctx.beginPath();sctx.arc(x,y,12,0,Math.PI*2);sctx.fill();
+      sctx.strokeStyle=clipped?hexToRgba(color,0.6):color; sctx.lineWidth=2.5;
+      if(clipped)sctx.setLineDash([2,2]);
+      const s=7;
+      sctx.beginPath();sctx.moveTo(x-s,y-s);sctx.lineTo(x+s,y+s);sctx.stroke();
+      sctx.beginPath();sctx.moveTo(x+s,y-s);sctx.lineTo(x-s,y+s);sctx.stroke();
+      sctx.setLineDash([]);
+
+      if(clipped){
+        const ang=Math.atan2(raw.y-y,raw.x-x);
+        const ax=x+Math.cos(ang)*13, ay=y+Math.sin(ang)*13;
+        sctx.fillStyle=hexToRgba(color,0.8);
+        sctx.beginPath();
+        sctx.moveTo(ax,ay);
+        sctx.lineTo(ax-7*Math.cos(ang+0.4),ay-7*Math.sin(ang+0.4));
+        sctx.lineTo(ax-7*Math.cos(ang-0.4),ay-7*Math.sin(ang-0.4));
+        sctx.closePath();sctx.fill();
+      }
+    });
+
+    // Root value boxes
+    roots.forEach((r,i)=>{
+      const color=ROOT_COLORS[i%ROOT_COLORS.length];
+      const reStr=r.re.toFixed(1),imStr=(r.im>=0?'+':'')+r.im.toFixed(0)+' i';
+      const bx=ML+4,by=MT+ph-18-i*22;
+      sctx.fillStyle='#d4d0c8';sctx.strokeStyle='#888';sctx.lineWidth=1;
+      sctx.fillRect(bx,by,92,17);sctx.strokeRect(bx,by,92,17);
+      sctx.fillStyle=color;sctx.fillRect(bx,by,4,17);
+      sctx.fillStyle='#111';sctx.font='10px monospace';sctx.textAlign='left';
+      sctx.fillText(reStr+' '+imStr,bx+7,by+12);
+    });
+  }
+
+  // The plane's position is now a genuine simulated response: it's driven
+  // toward the user-set "desired position" (the setpoint slider) using the
+  // actual dominant closed-loop pole(s) — so it converges smoothly when
+  // stable and real, wobbles when the poles are complex (more so as gain
+  // increases and the poles approach the imaginary axis), and grows into
+  // unbounded oscillation once unstable.
+  function animate(timestamp){
+    if(!startTime)startTime=timestamp;
+    if(lastTs===null)lastTs=timestamp;
+    let dt=(timestamp-lastTs)/1000; lastTs=timestamp;
+    dt=Math.min(dt,0.05); // clamp in case the tab was backgrounded
+
+    const complexPoles=currentRoots.filter(r=>Math.abs(r.im)>0.1);
+    let decay=-2, freq=0;
+    if(complexPoles.length>0){decay=complexPoles[0].re;freq=Math.abs(complexPoles[0].im);}
+    else if(currentRoots.length>0){decay=currentRoots.reduce((a,b)=>a.re>b.re?a:b).re;}
+
+    const wn=Math.max(0.3,Math.sqrt(decay*decay+freq*freq));
+    const zeta=-decay/wn; // negative once decay>0 -> unstable, growing oscillation
+
+    const setpoint=parseFloat(document.getElementById('setpoint').value);
+    const accel=wn*wn*(setpoint-posX)-2*zeta*wn*posV;
+    posV+=accel*dt;
+    posX+=posV*dt;
+    if(!isFinite(posX)||Math.abs(posX)>1e4){posX=Math.sign(posX||1)*1e4;posV=0;}
+
+    const shiftY=Math.max(-34,Math.min(34,-posX*34)); // +1 (top of slider) -> plane moves up
+    const angle=Math.max(-20,Math.min(20,posX*10));   // subtle tilt, secondary to the vertical motion
+    document.getElementById('plane-svg').style.transform=`translateY(${shiftY}px) rotate(${angle}deg)`;
+    document.getElementById('vslide-badge').textContent=setpoint.toFixed(2);
+
+    requestAnimationFrame(animate);
+  }
+
+  const GMIN=0.1, GMAX=200;
+  function gainToT(K){ return (Math.log10(K)-Math.log10(GMIN))/(Math.log10(GMAX)-Math.log10(GMIN)); }
+  function tToGain(t){ return GMIN*Math.pow(GMAX/GMIN,t); }
+
+  function update(){
+    document.getElementById('gain-val').textContent=currentGain.toFixed(2);
+
+    const a0=a0OfGain(currentGain);
+    const roots=findRoots([A3,A2,A1,a0]);
+    currentRoots=roots;
+
+    // Compute root locus on first update (deferred so page renders first)
+    if(!rootLocus){
+      setTimeout(()=>{rootLocus=getRootLocus();drawSplane(currentRoots);},10);
+    }
+
+    const anyUnstable=roots.some(r=>r.re>0.01);
+    const badge=document.getElementById('stab-badge');
+    badge.textContent=anyUnstable?'⚠ UNSTABLE':'✓ STABLE';
+    badge.className='stab-badge '+(anyUnstable?'unstable':'stable');
+
+    const list=document.getElementById('roots-list');
+    list.innerHTML='';
+    roots.forEach((r,i)=>{
+      const isU=r.re>0.01;
+      const row=document.createElement('div');
+      row.className='root-row '+(isU?'unstable':'stable');
+      const imStr=(r.im>=0?'+':'')+r.im.toFixed(2)+'i';
+      row.innerHTML=`<span class="root-cross" style="color:${ROOT_COLORS[i%ROOT_COLORS.length]}">×</span><span class="root-val">${r.re.toFixed(2)} ${imStr}</span>`;
+      list.appendChild(row);
+    });
+
+    drawSplane(roots);
+  }
+
+  const gainLog=document.getElementById('gain-log'), gainNum=document.getElementById('gain-num');
+  gainLog.addEventListener('input',()=>{
+    currentGain=tToGain(parseFloat(gainLog.value));
+    gainNum.value=currentGain.toFixed(2);
+    update();
+  });
+  gainNum.addEventListener('input',()=>{
+    let v=parseFloat(gainNum.value);
+    if(!isFinite(v))return;
+    v=Math.max(GMIN,Math.min(GMAX,v));
+    currentGain=v;
+    gainLog.value=gainToT(v);
+    update();
+  });
+  gainLog.value=gainToT(currentGain);
+  gainNum.value=currentGain.toFixed(2);
+  document.getElementById('setpoint').addEventListener('input',()=>{
+    document.getElementById('vslide-badge').textContent=parseFloat(document.getElementById('setpoint').value).toFixed(2);
+  });
+  update();
+  requestAnimationFrame(animate);
+</script>
+</body>
+</html>
